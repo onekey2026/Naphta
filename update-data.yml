@@ -1,0 +1,73 @@
+name: Update naphtha data & deploy
+
+on:
+  schedule:
+    # 2시간마다 (UTC 기준). 오피넷 값이 바뀐 경우에만 커밋/배포한다.
+    - cron: "17 */2 * * *"
+  push:
+    branches: [main]
+  workflow_dispatch:   # Actions 탭에서 수동 실행
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: update-data
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    outputs:
+      deploy: ${{ steps.commit.outputs.changed == 'true' || github.event_name != 'schedule' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install requests
+
+      - name: Fetch from Opinet
+        run: python scripts/fetch_naphtha.py
+
+      - name: Commit if changed
+        id: commit
+        run: |
+          if git diff --quiet -- data/naphtha.json; then
+            echo "No change"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/naphtha.json
+          git commit -m "Update naphtha data ($(date -u +%Y-%m-%dT%H:%MZ))"
+          git push
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare site
+        if: steps.commit.outputs.changed == 'true' || github.event_name != 'schedule'
+        run: |
+          mkdir -p _site/data
+          cp index.html _site/
+          cp data/naphtha.json _site/data/
+
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.commit.outputs.changed == 'true' || github.event_name != 'schedule'
+        with:
+          path: _site
+
+  deploy:
+    needs: update
+    if: needs.update.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

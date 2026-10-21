@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>나프타 시세</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #1d2330; --muted: #6b7280;
+    --border: #e5e7eb; --accent: #2563eb; --on-accent: #ffffff; --up: #d93025; --down: #1a73e8;
+    --line: #2563eb; --fill: rgba(37,99,235,0.08); --grid: rgba(0,0,0,0.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151c; --card: #1b1f29; --text: #e6e8ee; --muted: #9aa1b0;
+      --border: #2c3240; --accent: #4f8cff; --on-accent: #0b0e14; --up: #ff6b5e; --down: #5ea2ff;
+      --line: #6b9dff; --fill: rgba(107,157,255,0.12); --grid: rgba(255,255,255,0.08);
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font-family: "Pretendard", "Malgun Gothic", system-ui, sans-serif; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+  .summary { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
+  .tile { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+          padding: 14px 18px; min-width: 180px; flex: 1; }
+  .tile .label { color: var(--muted); font-size: 12px; }
+  .tile .value { font-size: 26px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .tile .value small { font-size: 14px; font-weight: 500; color: var(--muted); margin-left: 4px; }
+  .up { color: var(--up); } .down { color: var(--down); }
+  .periods { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+  @media (max-width: 640px) { .periods { grid-template-columns: repeat(2, 1fr); } }
+  .period { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px;
+            cursor: pointer; text-align: left; font: inherit; color: inherit; }
+  .period.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .period .label { color: var(--muted); font-size: 12px; }
+  .period .pct { font-size: 20px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .period .detail { color: var(--muted); font-size: 12px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .controls { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+  .group { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .group button { border: 0; background: transparent; padding: 7px 14px; font: inherit; font-size: 13px;
+                  color: var(--muted); cursor: pointer; }
+  .group button + button { border-left: 1px solid var(--border); }
+  .group button.on { background: var(--accent); color: var(--on-accent); }
+  .chart-box { position: relative; height: 420px; }
+  .msg { color: var(--muted); text-align: center; padding: 60px 0; }
+  footer { color: var(--muted); font-size: 12px; margin-top: 14px; text-align: right; }
+  footer a { color: inherit; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>나프타 국제가격 (싱가포르, 일간)</h1>
+  <div class="sub" id="fetched"></div>
+
+  <div class="summary">
+    <div class="tile"><div class="label">최신값</div><div class="value" id="latest">-</div></div>
+    <div class="tile"><div class="label">전일 대비</div><div class="value" id="change">-</div></div>
+    <div class="tile"><div class="label">기준일</div><div class="value" id="asof">-</div></div>
+  </div>
+
+  <div class="periods" id="periods">
+    <button class="period" data-months="1"><div class="label">1개월 변동</div><div class="pct">-</div><div class="detail"></div></button>
+    <button class="period on" data-months="3"><div class="label">3개월 변동</div><div class="pct">-</div><div class="detail"></div></button>
+    <button class="period" data-months="12"><div class="label">1년 변동</div><div class="pct">-</div><div class="detail"></div></button>
+    <button class="period" data-months="36"><div class="label">3년 변동</div><div class="pct">-</div><div class="detail"></div></button>
+  </div>
+
+  <div class="card">
+    <div class="controls">
+      <div class="group" id="unit">
+        <button data-unit="krw_l" class="on">원/L</button>
+        <button data-unit="usd_bbl">$/Bbl</button>
+      </div>
+      <div class="group" id="range">
+        <button data-months="1">1개월</button>
+        <button data-months="3" class="on">3개월</button>
+        <button data-months="12">1년</button>
+        <button data-months="36">3년</button>
+      </div>
+    </div>
+    <div class="chart-box"><canvas id="chart"></canvas><div class="msg" id="msg">불러오는 중…</div></div>
+  </div>
+
+  <footer>출처: 한국석유공사 오피넷 (<a href="https://www.opinet.co.kr/glopopdSelect.do" target="_blank">opinet.co.kr</a>)</footer>
+</div>
+
+<script>
+const UNITS = {
+  krw_l:   { label: "원/L",   digits: 2 },
+  usd_bbl: { label: "$/Bbl", digits: 2 },
+};
+let rows = [], unit = "krw_l", months = 3, chart = null;
+
+const fmt = (v, d = 2) => v.toLocaleString("ko-KR", { minimumFractionDigits: d, maximumFractionDigits: d });
+
+function renderSummary() {
+  const n = rows.length;
+  if (n === 0) return;
+  const last = rows[n - 1], prev = rows[n - 2];
+  const u = UNITS[unit];
+  document.getElementById("latest").innerHTML = `${fmt(last[unit], u.digits)}<small>${u.label}</small>`;
+  const el = document.getElementById("change");
+  if (prev) {
+    const diff = last[unit] - prev[unit], pct = diff / prev[unit] * 100;
+    const sign = diff > 0 ? "▲" : diff < 0 ? "▼" : "";
+    el.className = "value " + (diff > 0 ? "up" : diff < 0 ? "down" : "");
+    el.innerHTML = `${sign} ${fmt(Math.abs(pct))}%<small>${diff >= 0 ? "+" : ""}${fmt(diff, u.digits)}</small>`;
+  }
+  document.getElementById("asof").textContent = last.date;
+}
+
+// 최신일 기준 n개월 전 날짜 (YYYY-MM-DD)
+function startDate(n) {
+  const d = new Date(rows[rows.length - 1].date);
+  d.setMonth(d.getMonth() - n);
+  return d.toISOString().slice(0, 10);
+}
+
+// 기간 변동율: 기간 시작일 당일(휴장이면 직전 거래일) 값 대비 최신값
+function renderPeriods() {
+  const last = rows[rows.length - 1], u = UNITS[unit];
+  document.querySelectorAll("#periods .period").forEach(card => {
+    const n = Number(card.dataset.months), from = startDate(n);
+    const base = rows.filter(r => r.date <= from).at(-1) || rows[0];
+    const diff = last[unit] - base[unit], pct = diff / base[unit] * 100;
+    const pctEl = card.querySelector(".pct");
+    pctEl.className = "pct " + (diff > 0 ? "up" : diff < 0 ? "down" : "");
+    pctEl.textContent = `${diff > 0 ? "▲" : diff < 0 ? "▼" : ""} ${fmt(Math.abs(pct))}%`;
+    card.querySelector(".detail").textContent =
+      `${base.date} ${fmt(base[unit], u.digits)} → ${fmt(last[unit], u.digits)} (${diff >= 0 ? "+" : ""}${fmt(diff, u.digits)})`;
+    card.classList.toggle("on", n === months);
+  });
+}
+
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+function renderChart() {
+  const from = startDate(months);
+  const fromStr = (rows.filter(r => r.date <= from).at(-1) || rows[0]).date;
+  const view = rows.filter(r => r.date >= fromStr);
+  const u = UNITS[unit];
+
+  const data = {
+    labels: view.map(r => r.date),
+    datasets: [{
+      label: `나프타 (${u.label})`,
+      data: view.map(r => r[unit]),
+      borderColor: css("--line"),
+      backgroundColor: css("--fill"),
+      fill: true, borderWidth: 2, tension: 0.15,
+      pointRadius: view.length > 90 ? 0 : 2, pointHoverRadius: 4,
+    }],
+  };
+  if (chart) { chart.data = data; chart.update(); return; }
+  chart = new Chart(document.getElementById("chart"), {
+    type: "line",
+    data,
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: c => `${fmt(c.parsed.y)} ${UNITS[unit].label}` } },
+      },
+      scales: {
+        x: { ticks: { maxTicksLimit: 8, maxRotation: 0, color: css("--muted") }, grid: { display: false } },
+        y: { ticks: { callback: v => v.toLocaleString("ko-KR"), color: css("--muted") }, grid: { color: css("--grid") } },
+      },
+    },
+  });
+}
+
+function render() { renderSummary(); renderPeriods(); renderChart(); }
+
+function setMonths(n) {
+  months = n;
+  document.querySelectorAll("#range button").forEach(x => x.classList.toggle("on", Number(x.dataset.months) === n));
+}
+
+function bindGroup(id, attr, apply) {
+  document.getElementById(id).addEventListener("click", e => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    document.querySelectorAll(`#${id} button`).forEach(x => x.classList.toggle("on", x === b));
+    apply(b.dataset[attr]);
+    if (rows.length) render();
+  });
+}
+bindGroup("unit", "unit", v => unit = v);
+bindGroup("range", "months", v => months = Number(v));
+document.getElementById("periods").addEventListener("click", e => {
+  const card = e.target.closest(".period");
+  if (!card) return;
+  setMonths(Number(card.dataset.months));
+  if (rows.length) render();
+});
+
+// 브라우저/CDN 캐시를 피하려고 매번 쿼리스트링을 붙인다
+fetch(`data/naphtha.json?t=${Date.now()}`, { cache: "no-store" })
+  .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+  .then(j => {
+    rows = j.data;
+    document.getElementById("msg").remove();
+    document.getElementById("fetched").textContent =
+      `오피넷 데이터 갱신: ${j.updated_at.slice(0, 16).replace("T", " ")} (KST, 자동 갱신)`;
+    render();
+  })
+  .catch(err => { document.getElementById("msg").textContent = "데이터를 불러오지 못했습니다: " + err.message; });
+</script>
+</body>
+</html>
